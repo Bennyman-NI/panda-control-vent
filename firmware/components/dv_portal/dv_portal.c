@@ -405,7 +405,7 @@ static void add_flash_flags(cJSON *root, uint8_t mask)
 }
 
 static void add_profile(cJSON *root, const dv_lighting_profile_t *p, uint8_t flash_states,
-                        bool progress_printing)
+                        bool progress_printing, bool progress_alternate)
 {
     cJSON_AddBoolToObject(root, "enabled", p->enabled);
     cJSON_AddNumberToObject(root, "brightness", p->brightness);
@@ -428,6 +428,7 @@ static void add_profile(cJSON *root, const dv_lighting_profile_t *p, uint8_t fla
     cJSON_AddBoolToObject(root, "dim_idle", p->dim_idle);
     cJSON_AddBoolToObject(root, "follow_printer_light", p->follow_printer_light);
     cJSON_AddBoolToObject(root, "progress_printing", progress_printing);
+    cJSON_AddBoolToObject(root, "progress_alternate", progress_alternate);
     add_flash_flags(root, flash_states);
 }
 
@@ -492,10 +493,12 @@ static cJSON *lighting_json(void)
         dv_lighting_profile_t vent;
         primary_profile(&c, &vent);
         cJSON *vent_json = cJSON_AddObjectToObject(zones, "vent");
-        if (vent_json) add_profile(vent_json, &vent, c.flash_states, c.progress_printing);
+        if (vent_json) add_profile(vent_json, &vent, c.flash_states,
+                                   c.progress_printing, c.progress_alternate);
         cJSON *chamber_json = cJSON_AddObjectToObject(zones, "chamber");
         if (chamber_json) add_profile(chamber_json, &c.chamber, c.chamber_flash_states,
-                                      c.chamber_progress_printing);
+                                      c.chamber_progress_printing,
+                                      c.chamber_progress_alternate);
         cJSON *mapping = cJSON_AddObjectToObject(zones, "mapping");
         if (mapping) {
             cJSON_AddNumberToObject(mapping, "vent_first", 0);
@@ -612,7 +615,7 @@ static void patch_flash_flags(cJSON *body, uint8_t *mask)
 }
 
 static void patch_profile(cJSON *body, dv_lighting_profile_t *p, uint8_t *flash_states,
-                          bool *progress_printing)
+                          bool *progress_printing, bool *progress_alternate)
 {
     if (!cJSON_IsObject(body)) return;
     cJSON *e;
@@ -638,6 +641,7 @@ static void patch_profile(cJSON *body, dv_lighting_profile_t *p, uint8_t *flash_
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "dim_idle")) && cJSON_IsBool(e)) p->dim_idle = cJSON_IsTrue(e);
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "follow_printer_light")) && cJSON_IsBool(e)) p->follow_printer_light = cJSON_IsTrue(e);
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "progress_printing")) && cJSON_IsBool(e)) *progress_printing = cJSON_IsTrue(e);
+    if ((e = cJSON_GetObjectItemCaseSensitive(body, "progress_alternate")) && cJSON_IsBool(e)) *progress_alternate = cJSON_IsTrue(e);
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "mode")) && cJSON_IsNumber(e)) p->mode = (uint8_t)(e->valueint & 1);
     patch_rgb(body, "open", p->open); patch_rgb(body, "closed", p->closed);
     patch_rgb(body, "printing", p->printing); patch_rgb(body, "error", p->error);
@@ -697,13 +701,15 @@ static esp_err_t lighting_post(httpd_req_t *req)
         if (cJSON_IsObject(vent_json)) {
             dv_lighting_profile_t vent;
             primary_profile(&c, &vent);
-            patch_profile(vent_json, &vent, &c.flash_states, &c.progress_printing);
+            patch_profile(vent_json, &vent, &c.flash_states, &c.progress_printing,
+                          &c.progress_alternate);
             profile_to_primary(&vent, &c);
         }
         cJSON *chamber_json = cJSON_GetObjectItemCaseSensitive(zones, "chamber");
         if (cJSON_IsObject(chamber_json)) patch_profile(chamber_json, &c.chamber,
                                                         &c.chamber_flash_states,
-                                                        &c.chamber_progress_printing);
+                                                        &c.chamber_progress_printing,
+                                                        &c.chamber_progress_alternate);
     }
     cJSON_Delete(body);
 

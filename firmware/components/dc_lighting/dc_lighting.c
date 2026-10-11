@@ -96,7 +96,10 @@ static void render_effect(dc_lighting_effect_t effect, dc_rgb_t base,
         uint16_t distance = position > head ? position - head : head - position;
         level = scale(brightness, distance < 5 ? (uint8_t)((5 - distance) * 255 / 5) : 0);
     } else if (effect == DC_LIGHTING_PROGRESS) {
-        bool lit = s_progress >= 0.0f && position < (uint16_t)(s_progress * pixels);
+        uint16_t lit_pixels = s_progress <= 0.0f ? 0 :
+                              (uint16_t)(s_progress * pixels + 0.999f);
+        if (lit_pixels > pixels) lit_pixels = pixels;
+        bool lit = position >= pixels - lit_pixels;
         color = lit ? base : (dc_rgb_t){0, 0, 0};
         level = lit ? brightness : 255;
     } else if (effect == DC_LIGHTING_AUDIO_METER) {

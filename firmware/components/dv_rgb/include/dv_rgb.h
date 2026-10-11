@@ -115,8 +115,10 @@ typedef struct {
     dv_lighting_profile_t chamber;
     uint8_t flash_states;         // DV_FLASH_* overrides for the vent zone
     uint8_t chamber_flash_states; // DV_FLASH_* overrides for the chamber zone
-    bool progress_printing;       // after the state handoff, show completed print fraction
+    bool progress_printing;       // while printing, show the completed fraction
     bool chamber_progress_printing;
+    bool progress_alternate;      // alternate progress and selected effect every 3 seconds
+    bool chamber_progress_alternate;
 } dv_lighting_t;
 
 // Detect the connected strips, load saved config, drive the initial color.
