@@ -29,7 +29,7 @@ static const char *TAG = "dv_rgb";
 #define CFG_NVS_NS "app_nvs"
 #define CFG_NVS_KEY "lighting"
 #define IDLE_DIM_DELAY_US 3000000LL
-#define PRINT_PROGRESS_ALTERNATE_US 3000000LL
+#define DEFAULT_PROGRESS_INTERVAL_S 3
 
 static const gpio_num_t STRIP_GPIO[MAX_STRIPS] = { DV_PIN_RGB_STRIP_0, DV_PIN_RGB_STRIP_1 };
 static int s_count;
@@ -56,6 +56,8 @@ static dv_lighting_t s_cfg = {
         .dim_idle = false,
         .follow_printer_light = false,
     },
+    .progress_interval_s = DEFAULT_PROGRESS_INTERVAL_S,
+    .chamber_progress_interval_s = DEFAULT_PROGRESS_INTERVAL_S,
 };
 
 static int s_target = DV_MOTOR_TARGET_CLOSED;
@@ -178,12 +180,13 @@ static bool state_should_flash(uint8_t mask, uint8_t mode)
     return bit != 0 && (mask & bit) != 0;
 }
 
-static bool show_print_progress(bool enabled, bool alternate)
+static bool show_print_progress(bool enabled, bool alternate, uint8_t interval_s)
 {
     if (!enabled || s_pstatus != DV_PS_PRINTING || s_progress < 0.0f) return false;
     if (!alternate) return true;
+    if (interval_s < 1 || interval_s > 30) interval_s = DEFAULT_PROGRESS_INTERVAL_S;
     int64_t elapsed = esp_timer_get_time() - s_print_started_us;
-    return (elapsed / PRINT_PROGRESS_ALTERNATE_US) % 2 == 0;
+    return (elapsed / ((int64_t)interval_s * 1000000LL)) % 2 == 0;
 }
 
 /* Caller holds s_lock. Product policy resolves color + error precedence; the
@@ -230,11 +233,13 @@ static void apply_locked(void)
             zones[1].effect = DC_LIGHTING_STROBE;
         }
         if (!s_error && show_print_progress(s_cfg.progress_printing,
-                                             s_cfg.progress_alternate)) {
+                                             s_cfg.progress_alternate,
+                                             s_cfg.progress_interval_s)) {
             zones[0].effect = DC_LIGHTING_PROGRESS;
         }
         if (!s_error && show_print_progress(s_cfg.chamber_progress_printing,
-                                             s_cfg.chamber_progress_alternate)) {
+                                             s_cfg.chamber_progress_alternate,
+                                             s_cfg.chamber_progress_interval_s)) {
             zones[1].effect = DC_LIGHTING_PROGRESS;
         }
         (void)dc_lighting_set_progress(s_progress);
@@ -251,7 +256,8 @@ static void apply_locked(void)
         (void)dc_lighting_set((dc_rgb_t){s_cfg.error[0], s_cfg.error[1], s_cfg.error[2]}, DC_LIGHTING_STROBE, 64);
         return;
     }
-    if (show_print_progress(s_cfg.progress_printing, s_cfg.progress_alternate)) {
+    if (show_print_progress(s_cfg.progress_printing, s_cfg.progress_alternate,
+                            s_cfg.progress_interval_s)) {
         (void)dc_lighting_set_progress(s_progress);
         (void)dc_lighting_set(base_color(), DC_LIGHTING_PROGRESS, s_cfg.speed);
         return;

@@ -405,7 +405,8 @@ static void add_flash_flags(cJSON *root, uint8_t mask)
 }
 
 static void add_profile(cJSON *root, const dv_lighting_profile_t *p, uint8_t flash_states,
-                        bool progress_printing, bool progress_alternate)
+                        bool progress_printing, bool progress_alternate,
+                        uint8_t progress_interval_s)
 {
     cJSON_AddBoolToObject(root, "enabled", p->enabled);
     cJSON_AddNumberToObject(root, "brightness", p->brightness);
@@ -429,6 +430,9 @@ static void add_profile(cJSON *root, const dv_lighting_profile_t *p, uint8_t fla
     cJSON_AddBoolToObject(root, "follow_printer_light", p->follow_printer_light);
     cJSON_AddBoolToObject(root, "progress_printing", progress_printing);
     cJSON_AddBoolToObject(root, "progress_alternate", progress_alternate);
+    cJSON_AddNumberToObject(root, "progress_interval_s",
+                            progress_interval_s >= 1 && progress_interval_s <= 30
+                                ? progress_interval_s : 3);
     add_flash_flags(root, flash_states);
 }
 
@@ -494,11 +498,13 @@ static cJSON *lighting_json(void)
         primary_profile(&c, &vent);
         cJSON *vent_json = cJSON_AddObjectToObject(zones, "vent");
         if (vent_json) add_profile(vent_json, &vent, c.flash_states,
-                                   c.progress_printing, c.progress_alternate);
+                                   c.progress_printing, c.progress_alternate,
+                                   c.progress_interval_s);
         cJSON *chamber_json = cJSON_AddObjectToObject(zones, "chamber");
         if (chamber_json) add_profile(chamber_json, &c.chamber, c.chamber_flash_states,
                                       c.chamber_progress_printing,
-                                      c.chamber_progress_alternate);
+                                      c.chamber_progress_alternate,
+                                      c.chamber_progress_interval_s);
         cJSON *mapping = cJSON_AddObjectToObject(zones, "mapping");
         if (mapping) {
             cJSON_AddNumberToObject(mapping, "vent_first", 0);
@@ -615,7 +621,8 @@ static void patch_flash_flags(cJSON *body, uint8_t *mask)
 }
 
 static void patch_profile(cJSON *body, dv_lighting_profile_t *p, uint8_t *flash_states,
-                          bool *progress_printing, bool *progress_alternate)
+                          bool *progress_printing, bool *progress_alternate,
+                          uint8_t *progress_interval_s)
 {
     if (!cJSON_IsObject(body)) return;
     cJSON *e;
@@ -642,6 +649,10 @@ static void patch_profile(cJSON *body, dv_lighting_profile_t *p, uint8_t *flash_
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "follow_printer_light")) && cJSON_IsBool(e)) p->follow_printer_light = cJSON_IsTrue(e);
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "progress_printing")) && cJSON_IsBool(e)) *progress_printing = cJSON_IsTrue(e);
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "progress_alternate")) && cJSON_IsBool(e)) *progress_alternate = cJSON_IsTrue(e);
+    if ((e = cJSON_GetObjectItemCaseSensitive(body, "progress_interval_s")) && cJSON_IsNumber(e)) {
+        int v = e->valueint;
+        *progress_interval_s = (uint8_t)(v < 1 ? 1 : v > 30 ? 30 : v);
+    }
     if ((e = cJSON_GetObjectItemCaseSensitive(body, "mode")) && cJSON_IsNumber(e)) p->mode = (uint8_t)(e->valueint & 1);
     patch_rgb(body, "open", p->open); patch_rgb(body, "closed", p->closed);
     patch_rgb(body, "printing", p->printing); patch_rgb(body, "error", p->error);
@@ -702,14 +713,15 @@ static esp_err_t lighting_post(httpd_req_t *req)
             dv_lighting_profile_t vent;
             primary_profile(&c, &vent);
             patch_profile(vent_json, &vent, &c.flash_states, &c.progress_printing,
-                          &c.progress_alternate);
+                          &c.progress_alternate, &c.progress_interval_s);
             profile_to_primary(&vent, &c);
         }
         cJSON *chamber_json = cJSON_GetObjectItemCaseSensitive(zones, "chamber");
         if (cJSON_IsObject(chamber_json)) patch_profile(chamber_json, &c.chamber,
                                                         &c.chamber_flash_states,
                                                         &c.chamber_progress_printing,
-                                                        &c.chamber_progress_alternate);
+                                                        &c.chamber_progress_alternate,
+                                                        &c.chamber_progress_interval_s);
     }
     cJSON_Delete(body);
 
