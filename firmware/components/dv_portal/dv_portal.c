@@ -393,7 +393,18 @@ static void add_rgb(cJSON *root, const char *key, const uint8_t c[3])
     cJSON_AddItemToArray(a, cJSON_CreateNumber(c[2]));
 }
 
-static void add_profile(cJSON *root, const dv_lighting_profile_t *p)
+static void add_flash_flags(cJSON *root, uint8_t mask)
+{
+    cJSON_AddBoolToObject(root, "flash_open",      (mask & DV_FLASH_OPEN) != 0);
+    cJSON_AddBoolToObject(root, "flash_closed",    (mask & DV_FLASH_CLOSED) != 0);
+    cJSON_AddBoolToObject(root, "flash_idle",      (mask & DV_FLASH_IDLE) != 0);
+    cJSON_AddBoolToObject(root, "flash_prep",      (mask & DV_FLASH_PREPARING) != 0);
+    cJSON_AddBoolToObject(root, "flash_printing",  (mask & DV_FLASH_PRINTING) != 0);
+    cJSON_AddBoolToObject(root, "flash_paused",    (mask & DV_FLASH_PAUSED) != 0);
+    cJSON_AddBoolToObject(root, "flash_complete",  (mask & DV_FLASH_COMPLETE) != 0);
+}
+
+static void add_profile(cJSON *root, const dv_lighting_profile_t *p, uint8_t flash_states)
 {
     cJSON_AddBoolToObject(root, "enabled", p->enabled);
     cJSON_AddNumberToObject(root, "brightness", p->brightness);
@@ -415,6 +426,7 @@ static void add_profile(cJSON *root, const dv_lighting_profile_t *p)
     add_rgb(root, "complete", p->complete);
     cJSON_AddBoolToObject(root, "dim_idle", p->dim_idle);
     cJSON_AddBoolToObject(root, "follow_printer_light", p->follow_printer_light);
+    add_flash_flags(root, flash_states);
 }
 
 static void primary_profile(const dv_lighting_t *c, dv_lighting_profile_t *p)
@@ -478,9 +490,9 @@ static cJSON *lighting_json(void)
         dv_lighting_profile_t vent;
         primary_profile(&c, &vent);
         cJSON *vent_json = cJSON_AddObjectToObject(zones, "vent");
-        if (vent_json) add_profile(vent_json, &vent);
+        if (vent_json) add_profile(vent_json, &vent, c.flash_states);
         cJSON *chamber_json = cJSON_AddObjectToObject(zones, "chamber");
-        if (chamber_json) add_profile(chamber_json, &c.chamber);
+        if (chamber_json) add_profile(chamber_json, &c.chamber, c.chamber_flash_states);
         cJSON *mapping = cJSON_AddObjectToObject(zones, "mapping");
         if (mapping) {
             cJSON_AddNumberToObject(mapping, "vent_first", 0);
@@ -580,7 +592,23 @@ static void patch_rgb(cJSON *body, const char *key, uint8_t out[3])
     }
 }
 
-static void patch_profile(cJSON *body, dv_lighting_profile_t *p)
+static void patch_flash_flags(cJSON *body, uint8_t *mask)
+{
+    static const struct { const char *key; uint8_t bit; } fields[] = {
+        {"flash_open", DV_FLASH_OPEN}, {"flash_closed", DV_FLASH_CLOSED},
+        {"flash_idle", DV_FLASH_IDLE}, {"flash_prep", DV_FLASH_PREPARING},
+        {"flash_printing", DV_FLASH_PRINTING}, {"flash_paused", DV_FLASH_PAUSED},
+        {"flash_complete", DV_FLASH_COMPLETE},
+    };
+    for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
+        cJSON *e = cJSON_GetObjectItemCaseSensitive(body, fields[i].key);
+        if (!cJSON_IsBool(e)) continue;
+        if (cJSON_IsTrue(e)) *mask |= fields[i].bit;
+        else *mask &= (uint8_t)~fields[i].bit;
+    }
+}
+
+static void patch_profile(cJSON *body, dv_lighting_profile_t *p, uint8_t *flash_states)
 {
     if (!cJSON_IsObject(body)) return;
     cJSON *e;
@@ -610,6 +638,7 @@ static void patch_profile(cJSON *body, dv_lighting_profile_t *p)
     patch_rgb(body, "printing", p->printing); patch_rgb(body, "error", p->error);
     patch_rgb(body, "idle", p->idle); patch_rgb(body, "prep", p->prep);
     patch_rgb(body, "paused", p->paused); patch_rgb(body, "complete", p->complete);
+    patch_flash_flags(body, flash_states);
 }
 
 static esp_err_t lighting_post(httpd_req_t *req)
@@ -663,11 +692,11 @@ static esp_err_t lighting_post(httpd_req_t *req)
         if (cJSON_IsObject(vent_json)) {
             dv_lighting_profile_t vent;
             primary_profile(&c, &vent);
-            patch_profile(vent_json, &vent);
+            patch_profile(vent_json, &vent, &c.flash_states);
             profile_to_primary(&vent, &c);
         }
         cJSON *chamber_json = cJSON_GetObjectItemCaseSensitive(zones, "chamber");
-        if (cJSON_IsObject(chamber_json)) patch_profile(chamber_json, &c.chamber);
+        if (cJSON_IsObject(chamber_json)) patch_profile(chamber_json, &c.chamber, &c.chamber_flash_states);
     }
     cJSON_Delete(body);
 

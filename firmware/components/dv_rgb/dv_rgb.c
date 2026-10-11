@@ -156,6 +156,25 @@ static dc_lighting_effect_t core_effect(uint8_t effect)
     }
 }
 
+static bool state_should_flash(uint8_t mask, uint8_t mode)
+{
+    uint8_t bit = 0;
+    if (mode == DV_LIGHT_MODE_PRINTER) {
+        switch (s_pstatus) {
+        case DV_PS_PREPARING: bit = DV_FLASH_PREPARING; break;
+        case DV_PS_PRINTING:  bit = DV_FLASH_PRINTING;  break;
+        case DV_PS_PAUSED:    bit = DV_FLASH_PAUSED;    break;
+        case DV_PS_COMPLETE:  bit = DV_FLASH_COMPLETE;  break;
+        case DV_PS_IDLE:
+        case DV_PS_NONE:      bit = DV_FLASH_IDLE;      break;
+        default: break; // Error retains its dedicated use_error control.
+        }
+    } else {
+        bit = s_target == DV_MOTOR_TARGET_OPEN ? DV_FLASH_OPEN : DV_FLASH_CLOSED;
+    }
+    return bit != 0 && (mask & bit) != 0;
+}
+
 /* Caller holds s_lock. Product policy resolves color + error precedence; the
  * shared renderer paints the selected color/effect over the declared layout. */
 static void apply_locked(void)
@@ -193,6 +212,12 @@ static void apply_locked(void)
             zones[1].effect = DC_LIGHTING_STROBE;
             zones[1].speed = 64;
         }
+        if (!s_error && state_should_flash(s_cfg.flash_states, s_cfg.mode)) {
+            zones[0].effect = DC_LIGHTING_STROBE;
+        }
+        if (!s_error && state_should_flash(s_cfg.chamber_flash_states, s_cfg.chamber.mode)) {
+            zones[1].effect = DC_LIGHTING_STROBE;
+        }
         (void)dc_lighting_set_brightness(255);
         (void)dc_lighting_set_zones(zones, 2);
         return;
@@ -204,6 +229,10 @@ static void apply_locked(void)
     /* A print error takes top precedence and flashes to demand attention. */
     if (s_cfg.use_error && s_error) {
         (void)dc_lighting_set((dc_rgb_t){s_cfg.error[0], s_cfg.error[1], s_cfg.error[2]}, DC_LIGHTING_STROBE, 64);
+        return;
+    }
+    if (state_should_flash(s_cfg.flash_states, s_cfg.mode)) {
+        (void)dc_lighting_set(base_color(), DC_LIGHTING_STROBE, s_cfg.speed);
         return;
     }
     /* Cylon uses the resolved state color, like the other effects. */

@@ -49,6 +49,16 @@ typedef enum {
     DV_PS_ERROR,
 } dv_printer_status_t;
 
+// Per-state strobe overrides. Stored as a bitmask so new lighting behavior can
+// be appended to the persisted configuration without moving older fields.
+#define DV_FLASH_OPEN      (1u << 0)
+#define DV_FLASH_CLOSED    (1u << 1)
+#define DV_FLASH_IDLE      (1u << 2)
+#define DV_FLASH_PREPARING (1u << 3)
+#define DV_FLASH_PRINTING  (1u << 4)
+#define DV_FLASH_PAUSED    (1u << 5)
+#define DV_FLASH_COMPLETE  (1u << 6)
+
 /* Full lighting policy for the independently assignable chamber-light zone.
  * It intentionally mirrors the primary vent-light fields so neither zone is a
  * reduced-function secondary output. */
@@ -103,6 +113,8 @@ typedef struct {
                              // "circle" the printer). Indexed by s_strips[] order.
     bool chamber_independent; // false: original whole-string rendering
     dv_lighting_profile_t chamber;
+    uint8_t flash_states;         // DV_FLASH_* overrides for the vent zone
+    uint8_t chamber_flash_states; // DV_FLASH_* overrides for the chamber zone
 } dv_lighting_t;
 
 // Detect the connected strips, load saved config, drive the initial color.
