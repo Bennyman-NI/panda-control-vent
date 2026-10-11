@@ -115,6 +115,8 @@ typedef struct {
     dv_lighting_profile_t chamber;
     uint8_t flash_states;         // DV_FLASH_* overrides for the vent zone
     uint8_t chamber_flash_states; // DV_FLASH_* overrides for the chamber zone
+    bool progress_printing;       // after the state handoff, show completed print fraction
+    bool chamber_progress_printing;
 } dv_lighting_t;
 
 // Detect the connected strips, load saved config, drive the initial color.
@@ -123,7 +125,7 @@ esp_err_t dv_rgb_start(void);
 // Feed current state to the lighting policy. target is a dv_motor_target_t;
 // status is a dv_printer_status_t (drives printer-mode color + the error flash);
 // bed_temp_c may be NAN when there's no printer/telemetry.
-void dv_rgb_update(int target, int status, float bed_temp_c,
+void dv_rgb_update(int target, int status, float bed_temp_c, float progress,
                    bool printer_light_known, bool printer_light_on);
 
 // Get / set the lighting config. set persists to NVS and re-applies immediately.

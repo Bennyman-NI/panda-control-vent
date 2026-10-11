@@ -79,6 +79,7 @@ static void update_rgb_from_state(void)
 {
     dv_printer_status_t status = DV_PS_NONE;
     float bed = NAN;
+    float progress = -1.0f;
     bool printer_light_known = false;
     bool printer_light_on = false;
     switch (dc_source_get()) {
@@ -98,6 +99,7 @@ static void update_rgb_from_state(void)
             break;
         }
         bed = st.bed_temp;
+        progress = st.progress;
         printer_light_known = st.chamber_light_known;
         printer_light_on = st.chamber_light_on;
         break;
@@ -115,12 +117,13 @@ static void update_rgb_from_state(void)
         default:                   status = DV_PS_NONE; break;   // UNKNOWN / not subscribed
         }
         bed = st.bed_temp;
+        progress = st.progress;
         break;
     }
     default:
         break;
     }
-    dv_rgb_update((int)dv_policy_get_target(), status, bed,
+    dv_rgb_update((int)dv_policy_get_target(), status, bed, progress,
                   printer_light_known, printer_light_on);
 }
 

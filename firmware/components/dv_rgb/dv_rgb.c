@@ -29,6 +29,7 @@ static const char *TAG = "dv_rgb";
 #define CFG_NVS_NS "app_nvs"
 #define CFG_NVS_KEY "lighting"
 #define IDLE_DIM_DELAY_US 3000000LL
+#define PRINT_PROGRESS_DELAY_US 3000000LL
 
 static const gpio_num_t STRIP_GPIO[MAX_STRIPS] = { DV_PIN_RGB_STRIP_0, DV_PIN_RGB_STRIP_1 };
 static int s_count;
@@ -62,7 +63,9 @@ static int s_pstatus = DV_PS_NONE;
 static bool s_error;
 static bool s_printer_light_known, s_printer_light_on;
 static float s_bed = NAN;
+static float s_progress = -1.0f;
 static int64_t s_idle_dim_after_us;
+static int64_t s_print_progress_after_us;
 
 static const uint8_t *printer_status_color(void)
 {
@@ -175,6 +178,20 @@ static bool state_should_flash(uint8_t mask, uint8_t mode)
     return bit != 0 && (mask & bit) != 0;
 }
 
+static bool show_print_progress(bool enabled)
+{
+    return enabled && s_pstatus == DV_PS_PRINTING && s_progress >= 0.0f &&
+           s_print_progress_after_us > 0 &&
+           esp_timer_get_time() >= s_print_progress_after_us;
+}
+
+static bool waiting_for_print_progress(bool enabled)
+{
+    return enabled && s_pstatus == DV_PS_PRINTING && s_progress >= 0.0f &&
+           s_print_progress_after_us > 0 &&
+           esp_timer_get_time() < s_print_progress_after_us;
+}
+
 /* Caller holds s_lock. Product policy resolves color + error precedence; the
  * shared renderer paints the selected color/effect over the declared layout. */
 static void apply_locked(void)
@@ -218,6 +235,21 @@ static void apply_locked(void)
         if (!s_error && state_should_flash(s_cfg.chamber_flash_states, s_cfg.chamber.mode)) {
             zones[1].effect = DC_LIGHTING_STROBE;
         }
+        // A progress-enabled zone announces the Printing state with three
+        // seconds of steady colour before reducing to the percentage bar.
+        if (!s_error && waiting_for_print_progress(s_cfg.progress_printing)) {
+            zones[0].effect = DC_LIGHTING_SOLID;
+        }
+        if (!s_error && waiting_for_print_progress(s_cfg.chamber_progress_printing)) {
+            zones[1].effect = DC_LIGHTING_SOLID;
+        }
+        if (!s_error && show_print_progress(s_cfg.progress_printing)) {
+            zones[0].effect = DC_LIGHTING_PROGRESS;
+        }
+        if (!s_error && show_print_progress(s_cfg.chamber_progress_printing)) {
+            zones[1].effect = DC_LIGHTING_PROGRESS;
+        }
+        (void)dc_lighting_set_progress(s_progress);
         (void)dc_lighting_set_brightness(255);
         (void)dc_lighting_set_zones(zones, 2);
         return;
@@ -229,6 +261,15 @@ static void apply_locked(void)
     /* A print error takes top precedence and flashes to demand attention. */
     if (s_cfg.use_error && s_error) {
         (void)dc_lighting_set((dc_rgb_t){s_cfg.error[0], s_cfg.error[1], s_cfg.error[2]}, DC_LIGHTING_STROBE, 64);
+        return;
+    }
+    if (waiting_for_print_progress(s_cfg.progress_printing)) {
+        (void)dc_lighting_set(base_color(), DC_LIGHTING_SOLID, s_cfg.speed);
+        return;
+    }
+    if (show_print_progress(s_cfg.progress_printing)) {
+        (void)dc_lighting_set_progress(s_progress);
+        (void)dc_lighting_set(base_color(), DC_LIGHTING_PROGRESS, s_cfg.speed);
         return;
     }
     if (state_should_flash(s_cfg.flash_states, s_cfg.mode)) {
@@ -326,7 +367,7 @@ esp_err_t dv_rgb_start(void)
     return ESP_OK;
 }
 
-void dv_rgb_update(int target, int status, float bed_temp_c,
+void dv_rgb_update(int target, int status, float bed_temp_c, float progress,
                    bool printer_light_known, bool printer_light_on)
 {
     if (!s_lock) return;
@@ -341,10 +382,14 @@ void dv_rgb_update(int target, int status, float bed_temp_c,
             s_idle_dim_after_us = esp_timer_get_time() + IDLE_DIM_DELAY_US;
         else if (status != DV_PS_IDLE)
             s_idle_dim_after_us = 0;
+        s_print_progress_after_us = status == DV_PS_PRINTING
+                                        ? esp_timer_get_time() + PRINT_PROGRESS_DELAY_US
+                                        : 0;
     }
     s_pstatus = status;
     s_error = status == DV_PS_ERROR;
     s_bed = bed_temp_c;
+    s_progress = progress < 0.0f ? -1.0f : progress > 1.0f ? 1.0f : progress;
     s_printer_light_known = printer_light_known;
     s_printer_light_on = printer_light_on;
     apply_locked();
