@@ -687,6 +687,7 @@ static esp_err_t filament_get(httpd_req_t *req)
         cJSON *r = cJSON_CreateObject();
         cJSON_AddStringToObject(r, "name", rules[i].name);
         cJSON_AddBoolToObject(r, "seal", rules[i].seal);
+        cJSON_AddBoolToObject(r, "keep_sealed_after", rules[i].keep_sealed_after);
         cJSON_AddItemToArray(arr, r);
     }
     return send_json(req, root);
@@ -706,8 +707,12 @@ static esp_err_t filament_post(httpd_req_t *req)
         cJSON *nm = cJSON_GetObjectItemCaseSensitive(e, "name");
         if (!cJSON_IsString(nm) || nm->valuestring[0] == '\0') continue;   // skip blank rows
         cJSON *sl = cJSON_GetObjectItemCaseSensitive(e, "seal");
+        cJSON *after = cJSON_GetObjectItemCaseSensitive(e, "keep_sealed_after");
         snprintf(rules[n].name, sizeof(rules[n].name), "%s", nm->valuestring);
         rules[n].seal = cJSON_IsTrue(sl);
+        // Older clients only send `seal`; preserving that value here makes the
+        // API backward-compatible and gives sealed materials the safe default.
+        rules[n].keep_sealed_after = cJSON_IsBool(after) ? cJSON_IsTrue(after) : rules[n].seal;
         ++n;
     }
     cJSON_Delete(body);

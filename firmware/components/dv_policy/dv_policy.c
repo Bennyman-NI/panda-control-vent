@@ -24,6 +24,7 @@ static const char *TAG = "dv_policy";
 #define KEY_BED_CLOSE  "bed_close_c"
 #define KEY_MAN_TGT    "man_tgt"
 #define KEY_FILAMENT   "fil_rules"
+#define KEY_FILAMENT_V2 "fil_rules2"
 #define KEY_AUTO_STYLE "auto_style"
 #define KEY_SEAL_TGT   "seal_tgt_c"
 
@@ -54,11 +55,21 @@ typedef enum {
 // Default filament rules — the plastics most enclosure users seal vs. vent by
 // hand. User-editable + persisted (KEY_FILAMENT).
 static const dv_filament_rule_t DEFAULT_FILAMENT_RULES[] = {
-    {"PLA",  false}, {"PETG", false}, {"PET",  false}, {"TPU",  false},
-    {"ABS",  true},  {"ASA",  true},  {"PC",   true},  {"PA",   true},  {"HIPS", true},
+    {"PLA",  false, false}, {"PETG", false, false}, {"PET",  false, false}, {"TPU",  false, false},
+    {"ABS",  true,  true},  {"ASA",  true,  true},  {"PC",   true,  true},  {"PA",   true,  true},
+    {"HIPS", true,  true},
 };
 static dv_filament_rule_t s_rules[DV_FILAMENT_MAX];
 static int                s_rule_count = 0;
+static char               s_last_active_material[16] = "";
+static bool               s_was_active = false;
+
+static bool default_keep_sealed_after_name(const char *name)
+{
+    return name && (!strncmp(name, "ABS", 3) || !strncmp(name, "ASA", 3) ||
+                    !strncmp(name, "PC", 2) || !strncmp(name, "PA", 2) ||
+                    !strncmp(name, "HIPS", 4));
+}
 
 // First rule whose (uppercase) name is a prefix of the filament wins.
 static material_pref_t material_preference(const char *m)
@@ -75,6 +86,20 @@ static material_pref_t material_preference(const char *m)
         }
     }
     return MAT_PREFER_UNKNOWN;
+}
+
+static bool material_keep_sealed_after(const char *m)
+{
+    if (m == NULL || m[0] == '\0') return false;
+    char up[16];
+    size_t k = 0;
+    for (const char *p = m; *p && k < sizeof(up) - 1; ++p) up[k++] = (char)toupper((unsigned char)*p);
+    up[k] = '\0';
+    for (int i = 0; i < s_rule_count; ++i) {
+        size_t n = strnlen(s_rules[i].name, sizeof(s_rules[i].name));
+        if (n > 0 && strncmp(up, s_rules[i].name, n) == 0) return s_rules[i].keep_sealed_after;
+    }
+    return false;
 }
 
 static SemaphoreHandle_t s_lock = NULL;
@@ -183,6 +208,11 @@ static dv_motor_target_t decide_auto_target(const auto_input_t *st)
     }
 
     if (st->active) {
+        if (!s_was_active) s_last_active_material[0] = '\0';
+        s_was_active = true;
+        if (st->material[0]) {
+            snprintf(s_last_active_material, sizeof(s_last_active_material), "%s", st->material);
+        }
         material_pref_t mat = material_preference(st->material);
         if (s_automation_mode == DV_AUTOMATION_ADVANCED) {
             if (mat == MAT_PREFER_SEALED) return DV_MOTOR_TARGET_CLOSED;
@@ -197,8 +227,21 @@ static dv_motor_target_t decide_auto_target(const auto_input_t *st)
         return s_current_target;
     }
 
-    // Idle / complete: use bed-temp hysteresis so residual chamber heat
-    // keeps the vent open until things cool down.
+    bool just_finished_or_idle = s_was_active;
+    s_was_active = false;
+
+    // Advanced material rules may keep heat-sensitive/fume-producing materials
+    // sealed after completion so an internal filter can continue recirculating.
+    // Keep the last material because some printers clear their live tray field
+    // as soon as a job finishes.
+    if (s_automation_mode == DV_AUTOMATION_ADVANCED &&
+        (just_finished_or_idle || s_last_active_material[0]) &&
+        material_keep_sealed_after(st->material[0] ? st->material : s_last_active_material)) {
+        return DV_MOTOR_TARGET_CLOSED;
+    }
+
+    // Other materials use bed-temp hysteresis so residual chamber heat vents
+    // until the bed cools down.
     if (st->bed_temp > s_bed_open_c)  return DV_MOTOR_TARGET_OPEN;
     if (st->bed_temp < s_bed_close_c) return DV_MOTOR_TARGET_CLOSED;
     return s_current_target;
@@ -283,12 +326,25 @@ static void load_persisted(void)
     if (nvs_get_u32(h, KEY_BED_CLOSE, &v) == ESP_OK) s_bed_close_c = centi_to_c(v);
     if (nvs_get_u32(h, KEY_SEAL_TGT, &v) == ESP_OK) s_bed_seal_c = centi_to_c(v);
 
-    // Filament rules: override the defaults from the NVS blob if present + valid
-    // (a whole number of rules). On any error nvs_get_blob leaves s_rules alone.
+    // V2 adds post-print behavior. Prefer it, then migrate old rules with safe
+    // post-print defaults: ABS/ASA/PC/PA/HIPS stay sealed; others may vent.
     size_t rsz = sizeof(s_rules);
-    if (nvs_get_blob(h, KEY_FILAMENT, s_rules, &rsz) == ESP_OK &&
+    if (nvs_get_blob(h, KEY_FILAMENT_V2, s_rules, &rsz) == ESP_OK &&
         rsz >= sizeof(dv_filament_rule_t) && rsz % sizeof(dv_filament_rule_t) == 0) {
         s_rule_count = (int)(rsz / sizeof(dv_filament_rule_t));
+    } else {
+        typedef struct { char name[12]; bool seal; } legacy_rule_t;
+        legacy_rule_t legacy[DV_FILAMENT_MAX] = {0};
+        rsz = sizeof(legacy);
+        if (nvs_get_blob(h, KEY_FILAMENT, legacy, &rsz) == ESP_OK &&
+            rsz >= sizeof(legacy_rule_t) && rsz % sizeof(legacy_rule_t) == 0) {
+            s_rule_count = (int)(rsz / sizeof(legacy_rule_t));
+            for (int i = 0; i < s_rule_count; ++i) {
+                snprintf(s_rules[i].name, sizeof(s_rules[i].name), "%s", legacy[i].name);
+                s_rules[i].seal = legacy[i].seal;
+                s_rules[i].keep_sealed_after = default_keep_sealed_after_name(legacy[i].name);
+            }
+        }
     }
     nvs_close(h);
 }
@@ -345,12 +401,16 @@ esp_err_t dv_policy_set_filament_rules(const dv_filament_rule_t *rules, int coun
         }
         s_rules[i].name[k] = '\0';
         s_rules[i].seal = rules[i].seal;
+        s_rules[i].keep_sealed_after = rules[i].keep_sealed_after;
     }
     s_rule_count = count;
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
-        if (count == 0) nvs_erase_key(h, KEY_FILAMENT);
-        else nvs_set_blob(h, KEY_FILAMENT, s_rules, (size_t)count * sizeof(dv_filament_rule_t));
+        if (count == 0) nvs_erase_key(h, KEY_FILAMENT_V2);
+        else nvs_set_blob(h, KEY_FILAMENT_V2, s_rules, (size_t)count * sizeof(dv_filament_rule_t));
+        // Once V2 has been saved (including an intentional empty rule set), do
+        // not allow the legacy blob to reappear on the next reboot.
+        nvs_erase_key(h, KEY_FILAMENT);
         nvs_commit(h);
         nvs_close(h);
     }
@@ -473,6 +533,8 @@ esp_err_t dv_policy_clear(void)
     nvs_erase_key(h, KEY_BED_CLOSE);
     nvs_erase_key(h, KEY_AUTO_STYLE);
     nvs_erase_key(h, KEY_SEAL_TGT);
+    nvs_erase_key(h, KEY_FILAMENT);
+    nvs_erase_key(h, KEY_FILAMENT_V2);
     nvs_commit(h);
     nvs_close(h);
     return ESP_OK;

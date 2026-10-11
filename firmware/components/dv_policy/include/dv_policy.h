@@ -5,7 +5,8 @@
 //
 // AUTO mode defaults to a Panda Breath-style commanded-bed rule: below the
 // seal threshold opens the vents, at/above it closes them. Advanced mode can
-// apply reported-material rules first. Idle cooldown uses actual-bed hysteresis.
+// apply reported-material rules first. Advanced rules can also keep selected
+// materials sealed after a print; other materials use actual-bed hysteresis.
 //
 // MANUAL mode:
 //   target = whatever dv_policy_set_manual_target set most recently
@@ -40,20 +41,22 @@ dv_automation_mode_t dv_policy_get_automation_mode(void);
 esp_err_t dv_policy_set_seal_threshold(float bed_target_c);          // persisted
 float dv_policy_get_seal_threshold(void);
 
-// Bed-temperature hysteresis for AUTO mode (idle/complete only — during a
-// print the material rule wins). Default 45 / 35 °C. OPEN must be strictly
-// greater than CLOSE.
+// Bed-temperature hysteresis for AUTO mode (idle/complete only, unless the
+// active material's advanced rule requests a sealed post-print chamber).
+// Default 45 / 35 °C. OPEN must be strictly greater than CLOSE.
 esp_err_t dv_policy_get_thresholds(float *bed_open_c, float *bed_close_c);
 esp_err_t dv_policy_set_thresholds(float bed_open_c, float bed_close_c);
 
 // Filament rules for AUTO mode. During a print, if the detected filament name
-// begins with a rule's name, the vent follows that rule (seal = closed, else
-// vent = open); an unmatched filament vents (safe default for PLA-family).
+// begins with a rule's name, the vent follows that rule. keep_sealed_after
+// controls whether the chamber remains closed after the print instead of using
+// the normal residual-heat venting thresholds.
 // Names are matched case-insensitively as prefixes ("PLA" matches "PLA+").
 #define DV_FILAMENT_MAX 20
 typedef struct {
     char name[12];   // filament prefix, e.g. "PLA", "ABS"
     bool seal;       // true = seal chamber (closed); false = vent (open)
+    bool keep_sealed_after; // true = remain closed during post-print cooldown
 } dv_filament_rule_t;
 
 int       dv_policy_filament_rules(dv_filament_rule_t *out, int max);   // returns count
