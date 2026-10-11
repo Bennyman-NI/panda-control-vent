@@ -297,8 +297,12 @@ static inline dc_fila_result_t dc_bambu_active_filament(const char *json, char *
     // ABSENT (keep the last known filament), not empty. Only an active tray whose
     // tray_type is explicitly present-and-empty counts as EMPTY.
     if (got_now && now >= 0 && now < 250) {
-        const long wanted_ams = now / 4;
-        const long wanted_tray = now % 4;
+        // Four-slot AMS families flatten unit/slot as unit * 4 + slot. AMS HT
+        // units instead use hardware IDs 128..152 and contain one slot (0), so
+        // tray_now is the unit ID itself.
+        const bool is_ams_ht = now >= 128 && now < 153;
+        const long wanted_ams = is_ams_ht ? now : now / 4;
+        const long wanted_tray = is_ams_ht ? 0 : now % 4;
         const char *units = dc_bambu_json_direct_member(ams, "ams");
         if (units && *units == '[') {
             const char *unit = NULL;
