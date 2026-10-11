@@ -62,5 +62,11 @@ int main(void)
         "\"id\":\"254\",\"tray_type\":\"TPU\"}}}", filament, sizeof filament)
         == DC_FILA_PRESENT);
     assert(strcmp(filament, "TPU") == 0);
+    assert(dc_bambu_active_filament(
+        "{\"print\":{\"ams\":{\"ams\":[{\"id\":\"0\",\"tray\":["
+        "{\"id\":\"0\"},{\"id\":\"1\",\"tray_type\":\"PETG\"}]}],"
+        "\"tray_now\":\"1\"},\"bed_temper\":70,\"later_incomplete\":{",
+        filament, sizeof filament) == DC_FILA_PRESENT);
+    assert(strcmp(filament, "PETG") == 0);
     return 0;
 }

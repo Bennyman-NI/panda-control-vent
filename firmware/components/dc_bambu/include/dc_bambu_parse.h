@@ -186,6 +186,20 @@ static inline bool dc_bambu_find_string(const char *s, const char *key, char *ou
     return true;
 }
 
+// Find a named object without requiring the enclosing Bambu push-status message
+// to be complete. X1 reports can exceed the controller's reassembly buffer, but
+// the AMS object is near the front and is normally received in full.
+static inline const char *dc_bambu_json_find_object(const char *json, const char *quoted_key)
+{
+    const char *key = strstr(json, quoted_key);
+    if (!key) return NULL;
+    const char *value = strchr(key + strlen(quoted_key), ':');
+    if (!value) return NULL;
+    do { value++; } while (*value == ' ' || *value == '\t' ||
+                           *value == '\n' || *value == '\r');
+    return *value == '{' ? value : NULL;
+}
+
 static inline bool dc_bambu_json_member_string(const char *object, const char *key,
                                                 char *out, size_t outsz)
 {
@@ -267,10 +281,8 @@ static inline dc_bambu_light_result_t dc_bambu_chamber_light(const char *json)
 static inline dc_fila_result_t dc_bambu_active_filament(const char *json, char *out, size_t outsz)
 {
     out[0] = '\0';
-    const char *print = dc_bambu_json_direct_member(json, "print");
-    if (!print || *print != '{') return DC_FILA_ABSENT;
-    const char *ams = dc_bambu_json_direct_member(print, "ams");
-    const char *vt = dc_bambu_json_direct_member(print, "vt_tray");
+    const char *ams = dc_bambu_json_find_object(json, "\"ams\"");
+    const char *vt = dc_bambu_json_find_object(json, "\"vt_tray\"");
     if ((!ams || *ams != '{') && (!vt || *vt != '{')) return DC_FILA_ABSENT;
 
     long now = -1;
