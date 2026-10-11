@@ -27,6 +27,7 @@ interface for setup and everyday control.
 
 - Bambu LAN integration for printer status and temperature-based automation.
 - Separate vent and chamber-light colors, brightness, effects, and idle dimming.
+- Optional LED print-progress bars with continuous or timed alternating effects.
 - Optional chamber lights that follow the printer's factory chamber light.
 - In-place firmware updates that preserve compatible existing settings.
 - Advanced material rules for Klipper/Moonraker users.
@@ -46,6 +47,8 @@ Keep an official stock firmware image for recovery; the guide links to it.
 
 Use **Overview** for manual vent control or Auto, **Automation** for temperature
 thresholds and advanced rules, and **Lighting** for the vent and chamber lights.
+See the [lighting controls guide](docs/LIGHTING.md) for state colours, flashing,
+progress bars, and the adjustable display interval.
 
 > **Vents still open after printing?** In Auto, after the job ends and the bed
 > target is off, the vents can remain open until the actual bed temperature falls
@@ -63,6 +66,7 @@ No GPIO or electrical modification is required. See the
 ## Help and development
 
 - [Installation and updates](docs/INSTALLATION.md)
+- [Lighting controls](docs/LIGHTING.md)
 - [Troubleshooting and recovery](docs/TROUBLESHOOTING.md)
 - [Report a bug](https://github.com/rdcstout/panda-control-vent/issues)
 - [Security reporting](SECURITY.md) — never post credentials or vulnerability details publicly.

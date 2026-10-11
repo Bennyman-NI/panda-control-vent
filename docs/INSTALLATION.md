@@ -68,4 +68,6 @@ For connection problems or a device that does not return after updating, see
   vents closed at or above it. **Advanced** exposes the inherited material rules.
   Saving settings does not switch the operating mode; select Auto in Overview.
 - **Lighting:** configure Vent Lights and Chamber Lights separately, including
-  colors, brightness, idle dimming, and optional factory chamber-light following.
+  colors, brightness, idle dimming, optional factory chamber-light following,
+  and continuous or alternating print-progress bars. See
+  [Lighting controls](LIGHTING.md) for the full workflow.

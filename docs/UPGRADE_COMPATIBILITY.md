@@ -19,9 +19,11 @@ for:
 
 The existing lighting blob is a prefix of the expanded lighting structure.
 During the first boot, all existing bytes are loaded over initialized defaults.
-The two new chamber-light fields are appended, so an older lighting blob keeps
-its original vent-light values and starts with chamber lighting linked to the
-vent lights. Nothing is rewritten until the user saves lighting settings.
+New chamber-light, state-flash, and progress-display fields are appended, so an
+older lighting blob keeps its original vent-light values and starts with chamber
+lighting linked to the vent lights. Progress display starts disabled and its
+alternating interval defaults to 3 seconds. Nothing is rewritten until the user
+saves lighting settings.
 
 ## Intentional migration
 

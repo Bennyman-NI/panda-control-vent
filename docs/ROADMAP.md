@@ -173,7 +173,8 @@ sketch of what's needed:
 
 ## Phase 5 — Extras & Polish
 
-- [ ] Print progress on LEDs (once RGB lands)
+- [x] Print progress on LEDs, including continuous display or timed alternation
+      with the selected effect
 - [ ] Klipper macro integration — expose HTTP endpoints so gcode macros
       can explicitly command vent open/close and RGB effects
 - [ ] Home Assistant / MQTT bridge (optional fallback for non-Moonraker

@@ -7,6 +7,18 @@ below into the GitHub Release notes.
 
 ## [Unreleased]
 
+### Added
+- Independent flash controls for normal vent and printer lighting states.
+- Material rules can keep selected filaments sealed after a print while other
+  materials return to the normal cooldown-temperature policy.
+- Optional print-progress bars for the vent and chamber zones. Progress fills
+  from the far end and can remain continuous or alternate with the selected
+  effect at a configurable 1–30 second interval.
+
+### Fixed
+- Detect the active material correctly when printing from an AMS HT, including
+  large X1 status reports that are truncated after the complete AMS object.
+
 ## [0.1.2] - 2026-09-04
 
 ### Fixed
